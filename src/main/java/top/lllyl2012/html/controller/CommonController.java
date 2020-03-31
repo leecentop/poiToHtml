@@ -35,8 +35,8 @@ public class CommonController {
      *各种文件在线预览
      */
     @RequestMapping("/toHtml")
-    public void toHtml(HttpServletResponse response) throws Throwable {
-        resourceService.toHtml(response);
+    public void toHtml(HttpServletResponse response, String fileName) throws Throwable {
+        resourceService.toHtml(response,fileName);
     }
 
     /**
@@ -45,9 +45,32 @@ public class CommonController {
      * @param photo
      * @return
      */
+    @RequestMapping(value = {"/{dir}/{photo}"},produces = MediaType.IMAGE_JPEG_VALUE)
+    @ResponseBody
+    public ResponseEntity<?> getImage1(HttpServletResponse response, @PathVariable String dir, @PathVariable String photo) {
+        return resourceService.showPhotoDoc(response,dir,photo);
+    }
+
+    /**
+     * 下载图片
+     * @param response
+     * @param photo
+     * @return
+     */
+    @RequestMapping(value = {"/image/{dir}/word/media/{photo}"},produces = MediaType.IMAGE_JPEG_VALUE)
+    @ResponseBody
+    public ResponseEntity<?> getImage2(HttpServletResponse response, @PathVariable String dir, @PathVariable String photo) {
+        return resourceService.showPhotoDocx(response,dir,photo);
+    }
+    /**
+     * 下载图片
+     * @param response
+     * @param photo
+     * @return
+     */
     @RequestMapping(value = {"/{photo}","/image/word/media/{photo}"},produces = MediaType.IMAGE_JPEG_VALUE)
     @ResponseBody
-    public ResponseEntity<?> getImage2(HttpServletResponse response, @PathVariable String photo) {
+    public ResponseEntity<?> getImage3(HttpServletResponse response, @PathVariable String photo) {
         return resourceService.showPhotoDoc(response,photo);
     }
 

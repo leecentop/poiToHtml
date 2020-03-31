@@ -1,5 +1,11 @@
 package top.lllyl2012.html.utils;
 
+import com.sun.javafx.text.TextRun;
+import com.tfd.POIUtils;
+import org.apache.poi.POIXMLDocument;
+import org.apache.poi.hslf.extractor.PowerPointExtractor;
+import org.apache.poi.hslf.record.Slide;
+//import org.apache.poi.hslf.usermodel.HSLFSlideShow;
 import org.apache.poi.hssf.converter.ExcelToHtmlConverter;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.hwpf.HWPFDocument;
@@ -7,19 +13,36 @@ import org.apache.poi.hwpf.converter.PicturesManager;
 import org.apache.poi.hwpf.converter.WordToHtmlConverter;
 import org.apache.poi.hwpf.usermodel.Picture;
 import org.apache.poi.hwpf.usermodel.PictureType;
+import org.apache.poi.openxml4j.exceptions.OpenXML4JException;
+import org.apache.poi.sl.usermodel.SlideShow;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xslf.extractor.XSLFPowerPointExtractor;
+import org.apache.poi.xslf.usermodel.XMLSlideShow;
+import org.apache.poi.xslf.usermodel.XSLFSlide;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.xwpf.converter.core.BasicURIResolver;
 import org.apache.poi.xwpf.converter.core.FileImageExtractor;
 import org.apache.poi.xwpf.converter.xhtml.XHTMLConverter;
 import org.apache.poi.xwpf.converter.xhtml.XHTMLOptions;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
+
+import org.openxmlformats.schemas.presentationml.x2006.main.CTShape;
+import org.apache.xmlbeans.XmlException;
+import org.openxmlformats.schemas.drawingml.x2006.main.CTRegularTextRun;
+import org.openxmlformats.schemas.drawingml.x2006.main.CTTextBody;
+import org.openxmlformats.schemas.drawingml.x2006.main.CTTextParagraph;
+import org.openxmlformats.schemas.presentationml.x2006.main.CTGroupShape;
+import org.openxmlformats.schemas.presentationml.x2006.main.CTSlide;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import org.w3c.dom.Document;
 
+import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.transform.OutputKeys;
@@ -32,6 +55,17 @@ import java.util.List;
 
 @Component
 public class File2HtmlUtil {
+    @Autowired
+    private Environment env;
+
+    private static String winUrl;
+    private static String linuxUrl;
+
+    @PostConstruct
+    public void readConfig() {
+        winUrl = env.getProperty("win-url");
+        linuxUrl = env.getProperty("linux-url");
+    }
 
     /**
      * 根据系统返回路径
@@ -39,23 +73,31 @@ public class File2HtmlUtil {
     public static String getRoot(){
         String os = System.getProperty("os.name");
         if (os.toLowerCase().startsWith("win")){
-            return "C:/Users/Public/Pictures" ;
+//            return "C:/Users/Public/Pictures";
+            return winUrl;
         }else {
-            return "/home/static";
+//            return "/home/static";
+            return linuxUrl;
         }
     }
 
     public static void word2007ToHtml(byte[] body, HttpServletResponse response) throws Exception {
-        String imagePathStr = getRoot() + "/image/";
+        String imagePathStr = getRoot() + "/image";
         ByteArrayInputStream is = new ByteArrayInputStream(body);
         OutputStreamWriter outputStreamWriter = null;
         try {
             XWPFDocument document = new XWPFDocument(is);
+
+            String uuid = POIUtils.getUUID();
+            imagePathStr = imagePathStr + File.separator + uuid + File.separator;
+            POIUtils.createDir(imagePathStr);
+
             XHTMLOptions options = XHTMLOptions.create();
             // 存放图片的文件夹
             options.setExtractor(new FileImageExtractor(new File(imagePathStr)));
             // html中图片的路径
-            options.URIResolver(new BasicURIResolver("image"));
+            options.URIResolver(new BasicURIResolver("/image"+File.separator + uuid + File.separator));
+            options.setIgnoreStylesIfUnused(false);
 //            outputStreamWriter = new OutputStreamWriter(new FileOutputStream(targetFileName), "utf-8");
 //            outputStreamWriter = response.getWriter();
             XHTMLConverter xhtmlConverter = (XHTMLConverter) XHTMLConverter.getInstance();
@@ -67,7 +109,7 @@ public class File2HtmlUtil {
         }
     }
 
-    public static void word2003ToHtml(byte[] body, HttpServletResponse response) throws Throwable {
+    public static void word2003ToHtml(byte[] body, HttpServletResponse response) throws Exception {
         final String path =  getRoot() + "/image/word/media";
         File fileDir = new File(path);
         if (!fileDir.exists()) {
@@ -88,11 +130,14 @@ public class File2HtmlUtil {
         });
         wordToHtmlConverter.processDocument(wordDocument);
         List pics = wordDocument.getPicturesTable().getAllPictures();
+        String uuid = POIUtils.getUUID();
+        String imgDir = path + File.separator + uuid;
+        POIUtils.createDir(imgDir);
         if (pics != null) {
             for (int i = 0; i < pics.size(); i++) {
                 Picture pic = (Picture) pics.get(i);
                 try {
-                    pic.writeImageContent(new FileOutputStream(path + "/"
+                    pic.writeImageContent(new FileOutputStream(imgDir  + File.separator
                             + pic.suggestFullFileName()));
                 } catch (FileNotFoundException e) {
                     e.printStackTrace();
@@ -110,11 +155,22 @@ public class File2HtmlUtil {
         serializer.setOutputProperty(OutputKeys.METHOD, "html");
         serializer.transform(domSource, streamResult);
         outStream.close();
+        String content = new String(outStream.toByteArray());
+        content = content.replace("<img src=\"", "<img src=\"" + uuid + "/");
 
-        OutputStream outputStream = response.getOutputStream();
-        outputStream.write(outStream.toByteArray());
-        outputStream.flush();
-        outputStream.close();
+//        OutputStream outputStream = response.getOutputStream();
+//        outputStream.write(outStream.toByteArray());
+//        outputStream.flush();
+//        outputStream.close();
+
+
+        response.setCharacterEncoding("utf-8");
+        response.setContentType("text/html; charset=utf-8");
+        PrintWriter printWriter = response.getWriter();
+
+        printWriter.write(content);
+        printWriter.flush();
+        printWriter.close();
     }
 
     public static void pdf2Html(byte[] body, HttpServletResponse response) throws Throwable {
@@ -125,7 +181,7 @@ public class File2HtmlUtil {
         out.close();
     }
 
-    public static void image2Html(byte[] body, HttpServletResponse response)throws Throwable{
+    public static void image2Html(byte[] body, HttpServletResponse response)throws Exception{
         response.setContentType("image/png");
         OutputStream outputStream = response.getOutputStream();
         outputStream.write(body);//这里填表单访问接口
@@ -169,6 +225,12 @@ public class File2HtmlUtil {
 
     }
 
+    /**
+     * xlsx
+     * @param fis
+     * @param res
+     * @throws Exception
+     */
     public static void ExcelToHtml (InputStream fis, HttpServletResponse res) throws Exception{
         Workbook workbook = null;
         try {
@@ -297,4 +359,58 @@ public class File2HtmlUtil {
         out.flush();
         out.close();
     }
+
+//    /**
+//     * 用来读取ppt文件
+//     * @param filePath
+//     * @return
+//     * @throws IOException
+//     */
+//    public static String getTextFromPPT( String filePath) throws IOException{
+//        FileInputStream in = new FileInputStream(filePath);
+//        PowerPointExtractor extractor = new PowerPointExtractor(in);
+//        String content = extractor.getText();
+//        extractor.close();
+//        return content;
+//    }
+//    /**
+//     * 用来读取pptx文件
+//     * @param filePath
+//     * @return
+//     * @throws IOException
+//     */
+//    public static String getTextFromPPTX( String filePath) throws IOException{
+//        String resultString = null;
+//        StringBuilder sb = new StringBuilder();
+//        FileInputStream in = new FileInputStream(filePath);
+//        try {
+//            XMLSlideShow xmlSlideShow = new XMLSlideShow(in);
+//            List<XSLFSlide> slides = xmlSlideShow.getSlides();
+//            for(XSLFSlide slide:slides){
+//                CTSlide rawSlide = slide.getXmlObject();
+//                CTGroupShape gs = rawSlide.getCSld().getSpTree();
+//                CTShape[] shapes = gs.getSpArray();
+//                for(CTShape shape:shapes){
+//                    CTTextBody tb = shape.getTxBody();
+//                    if(null==tb){
+//                        continue;
+//                    }
+//                    CTTextParagraph[] paras = tb.getPArray();
+//                    for(CTTextParagraph textParagraph:paras){
+//                        CTRegularTextRun[] textRuns = textParagraph.getRArray();
+//                        for(CTRegularTextRun textRun:textRuns){
+//                            sb.append(textRun.getT());
+//                        }
+//                    }
+//                }
+//            }
+//            resultString = sb.toString();
+//            xmlSlideShow.close();
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//        return resultString;
+//    }
+
+
 }
